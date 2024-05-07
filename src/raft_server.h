@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include "KVDATABASE.h" // Assuming this is your KVDatabase class
 #include <set>
+#include "message.h"
 enum server_state{
     Leader = 0,
     Follower = 1,
@@ -19,6 +20,8 @@ enum server_state{
 const int MAX_SERVERS = 10000;
 class raft_server {
 private:
+    int epoll_fd; // epoll 文件描述符
+    
     server_state state;
     int server_id;
     std::vector<std::pair<int,std::string> > server_addresses; // Map of server IDs to their IP addresses
@@ -49,11 +52,11 @@ private:
 
     //vote相关
     void start_election(){};//开始一次领导者选举。
-    void vote_request(){};// 发送投票请求给所有其他节点。
-    void grant_vote(int readfd){};// 处理其他节点发来的投票请求，并决定是否授权投票。
-    void handle_vote_request(const std::string& message);// Function to handle vote response from another server
+    //void vote_request(){};// 发送投票请求给所有其他节点。
+    void handle_vote_request(int fd,const std::string& message);//处理投票请求
     void handle_vote_response(const std::string& message);// 处理投票应答。
-    
+    //message相关
+    std::string create_vote_request_message() {};
     //日志相关
     void append_entries(){}; //领导者用于将日志项复制给所有跟随者。
     void commit_log_vector(){};//在收到来自leader的提交请求后提交日志

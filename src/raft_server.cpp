@@ -5,7 +5,36 @@ raft_server::raft_server(int id, const std::vector<std::pair<int,std::string>>& 
     this->native_port = port;
     this->server_listen_fd = init_native_fd(this->native_port);
     init_cluster_sockets();
+     epoll_fd = epoll_create1(0);
+        if (epoll_fd == -1) {
+            // 处理错误
+            perror("Failed to create epoll");
+            exit(EXIT_FAILURE);
+        }
 
+        // 初始化服务器和套接字
+        init_native_fd(port);
+        init_cluster_sockets();
+
+        // 添加监听套接字到 epoll
+        struct epoll_event event;
+        event.events = EPOLLIN;
+        event.data.fd = server_listen_fd;
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_listen_fd, &event) == -1) {
+            // 处理错误
+            perror("Failed to add listen fd to epoll");
+            exit(EXIT_FAILURE);
+        }
+
+        // 添加其他套接字到 epoll
+        for (auto fd : cluster_socket_fds) {
+            event.data.fd = fd;
+            if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event) == -1) {
+                // 处理错误
+                perror("Failed to add cluster fd to epoll");
+                exit(EXIT_FAILURE);
+            }
+        }
     // 初始化其他变量...
 
 }
@@ -70,26 +99,24 @@ void raft_server::init_cluster_sockets() {
     }
 }
 void raft_server::start_election(){
- current_term++;
-
+        current_term++;
         // 2. 给自己投票
         voted_for = server_id;
         votes_received++;
-
         // 3. 转换为候选人状态
         state = server_state::Candidate;
         // 4. 发送投票请求给所有其他服务器
-        for (const auto& [id, addr] : server_addresses) {
-            if (id != server_id) { // 不向自己发送投票请求
-                send_message_to_all(create_vote_request_message());
+        for (auto x: cluster_socket_fds) {
+            if (x != server_id) { // 不向自己发送投票请求
+                send_message(create_vote_request_message(),x);//将投票请求的string发送给出了自己外的所有fd
             }
         }
-    }
-
-    std::string create_vote_request_message() {
+}
+//该函数生成序列化后的投票请求
+    std::string raft_server::create_vote_request_message() {
+        Message temmessage = Message(MessageType::VoteRequest,current_term,-1);
+        return temmessage.serialize();
         // 创建并返回投票请求消息
         // 消息格式通常包括当前任期、候选人ID、以及最后日志条目的索引和项
         // 这里只是一个示例，实际中需要包含更多的信息
-        return "vote request: term=" + std::to_string(current_term) + ", candidate_id=" + std::to_string(server_id);
-
 }
